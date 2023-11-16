@@ -7,17 +7,17 @@
 #include <WiFi.h>
 #include "main.h"
 
-#define MAX_CHANNEL 13  // for North America // 13 in Europe
+#define MAX_CHANNEL 13  // 13 en  Europe
 
-const int maxStringLen=20;
+const int maxStringLen=20; // longueur maximale de chaque chaine de caractères
 const int maxValue = 10; // defini le nombre maximun de valeurs transmises par un capteur
 // La structure d'un message de données ESP-NOW
-// DOIR ABSOLUMENT CORRESPONDRE A CELLE DU SERVEUR
+// DOIT ABSOLUMENT CORRESPONDRE A CELLE DU SERVEUR
 // taille maximale = 250
 typedef struct struct_message {
   uint8_t msgType; // position 0 -> 1 octet à la valeur de 1
   uint8_t id; // position 1 ->1 octet (valeur est celle de l'id du capteur)
-// 2 octets non utilisés !!
+  // avec le langage il y a ici 2 octets non utilisés !!
   unsigned int seqNum; // position 4 ->4 octets ( non utilisé dans la version actuelle)
   float valeurs[10]; // position 8 -> taille = 10 * 4 = 40 octets 
   // il reste 250 -48 soit 202 caractères soit 20 caractères max par stringValue envoyée et on perd 2 bytes 
@@ -40,7 +40,7 @@ enum PairingStatus {NOT_PAIRED, PAIR_REQUEST, PAIR_REQUESTED, PAIR_PAIRED,};
 
 
 bool setup_ESP_NOW(); // initialise le protocole de communication ESP-NOW de la carte 
-void prepareMessage(int _id);
+void prepareMessage();
 void addMesure(float value, char * stringValue, int index);
 void printMessage();
 void sendMessage();

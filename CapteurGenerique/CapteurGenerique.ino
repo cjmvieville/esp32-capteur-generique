@@ -4,7 +4,7 @@
 #include "capteur_generique_esp_now.h"
 
 #define BOARD_ID 2 // Mettre l'identidiant du capteur ici
-// used to measure Pairing time
+
 int getBoardId(){
   return BOARD_ID;
 }
@@ -12,6 +12,7 @@ int getBoardId(){
 void setup() {
   /* Initialise le port série */
   Serial.begin(115200);
+  /* Initialise le réseau ESP-NOW pour échanger avec le serveur */
   setup_ESP_NOW();
 }
 
@@ -20,7 +21,7 @@ void loop() {
   if (autoPairing() == PAIR_PAIRED) {
     Serial.println("Serveur ESP-NOW  trouvé : on envoie un message");
     // prépare le message à envoyer puis y ajoute toutes les mesures recceuillies par le capteur
-    prepareMessage(getBoardId());
+    prepareMessage();
     addMesure(1.0,"un",0);
     addMesure(2.0,"deux",1);
     addMesure(3.0,"trois",2);

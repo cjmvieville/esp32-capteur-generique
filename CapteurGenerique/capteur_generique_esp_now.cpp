@@ -1,38 +1,58 @@
 #include "capteur_generique_esp_now.h"
+/*
+ * Ce module permet d'envoyer vers un sereur ESP-NOW 10 (maxValue défini dans le .h)valeurs numériques différentes 
+ * associées à 10 chaines de caractères de longueur maximale de 20 caractères (maxStringLen défini dans le .h)
+ * 
+ * Le module daoit être initialisé par l'appel à la fonction setup_ESP_NOW() (normalment dans le "setup()" 
+ * 
+ * Puis pour chaque envoi de mesures, il faut dans l'ordre
+ *  Préparer le message 
 
-struct_message myData;  // data to send
+*/
+struct_message myData;  // le message contenant  les mesures qui sera envoyé vers le serveur
 
 struct_pairing pairingData; // message d'appairage
 
 PairingStatus pairingStatus = NOT_PAIRED; 
 
-uint8_t serverAddress[] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF};
+uint8_t serverAddress[] = {0xFF,0xFF,0xFF,0xFF,0xFF,0xFF}; // adresse de diffusiion vers tous les récepteurs ESP-NOW
 
 MessageType messageType;
 
-esp_now_peer_info_t peerInfo;
+esp_now_peer_info_t peerInfo; // les données d'appairage
 
-int channel = 1;
-unsigned int seqNum = 0; 
+int channel = 1; // Le canal utilisé pour échanger (peut varier de 1 à 13 en Europe)
+unsigned int seqNum = 0; // numéro de séquence qui numérote séquentiellement chaque message ; n'est pas exploité par le serveur dans sa version actuelle
 
-unsigned long currentMillis = millis();
-unsigned long previousMillis = 0;   // Spour stocker le moment où une demande d'appairage a été émise
+unsigned long currentMillis = millis(); // Référence de temps du capteur
+unsigned long previousMillis = 0;   // Spour stocker le moment où la demande d'appairage a été émise
 
-void prepareMessage(int _id){
+// Fonction pour préparer la demande le message contenant les mesures du capteur
+void prepareMessage(){
   for(int i=0; i<10; i++){
     myData.msgType=DATA;
-    myData.id=_id;
-    myData.seqNum = seqNum++;
-    for(int i=0; i<10; i++) {
-      addMesure(0.0, "0                    ", i);
+    myData.id=getBoardId();
+    myData.seqNum = seqNum++; // même s'il n'est pas exploité par le serveur, il est présente dans le message
+    for(int i=0; i<maxValue; i++) {
+      addMesure(0.0, "0                    ", i); // les dix mesures sont mises à zéro
     }
   }
 }
+/* Ajoute une mesure au message ESP-NOW
+ *  On doit préciser en arguments :
+ *    La valeur numérique (value)
+ *    Le txte associé (stringValue)
+ *    L'index de la valeur (de 0 à maxValue-1)
+ */
 void addMesure(float value, char * stringValue, int index){
-  if(index>=10) return;
+  if(index>=maxValue) return;
   myData.valeurs[index]=value;
-  memcpy(&myData.stringValues[index],stringValue,20);
+  memcpy(&myData.stringValues[index],stringValue,maxStringLen);
 }
+/*
+ * Pour la mise au point du module
+ * Cette fonctionne envoie sur la liaison série le contenu du message
+ */
 void printMessage(){
   char *s = (char *)&myData;
   int i=0;
@@ -44,16 +64,23 @@ void printMessage(){
     Serial.println();
   }
 }
+/*
+ * Envoie du message vers le serveur 
+ * 
+ */
 void sendMessage(){
-	esp_err_t result = esp_now_send(pairingData.macAddr, (uint8_t *) &myData, sizeof(myData));
+  esp_err_t result = esp_now_send(pairingData.macAddr, (uint8_t *) &myData, sizeof(myData));
     if (result == ESP_OK) {
       Serial.println("Envoi correct du message");
     } else {
       Serial.println("Echec de l'envoi du message");
     }
 }
+/*
+ * Séquence complète pour préparer, ajouter des mesures au message avant dl'envoyer au serveur ESP-NOW
+ */
 void testMessage(){
-    prepareMessage(2);
+    prepareMessage();
     printMessage();
     addMesure(1.0,"un..................",0);
     addMesure(2.0,"deux................",1);
@@ -68,7 +95,9 @@ void testMessage(){
     printMessage();
     sendMessage();
 }
-
+/*
+ * Envoie l'adresse mac passée en argument sur la liaison série
+ */
 void _printMAC(const uint8_t * mac_addr){
   char macStr[18];
   snprintf(macStr, sizeof(macStr), "%02x:%02x:%02x:%02x:%02x:%02x",
@@ -76,14 +105,25 @@ void _printMAC(const uint8_t * mac_addr){
   Serial.print(macStr);
 }
 
-// callback appelé à la fin d'un envoi de message
+/* 
+ *  callback appelé à la fin d'un envoi de message
+ *  Envoi l'état de l'envoi sur la liaison série
+ *  Arguments : 
+ *    mac_addr : l'adresse mac du serveur
+ *    status : le status de cet envoi
+ */
 void _onDataSent(const uint8_t *mac_addr, esp_now_send_status_t status) {
   Serial.print("Etat du dernier envoi : ");
   Serial.print(status == ESP_NOW_SEND_SUCCESS ? "Succès vers : " : "Echec vers : ");
   _printMAC(mac_addr);
   Serial.println();
 }
-
+/*
+ * Fonction interne au module qui mémorise les données de l'appairage 
+ * Arguments : 
+ *  mac_addr : adresse mac du serveur ESP-NOW
+ *  chan : le numéro de canal utilisé par ESP-NOW
+ */
 void _addPeer(const uint8_t * mac_addr, uint8_t chan){
   esp_now_peer_info_t peer;
   ESP_ERROR_CHECK(esp_wifi_set_channel(chan ,WIFI_SECOND_CHAN_NONE));
@@ -98,6 +138,11 @@ void _addPeer(const uint8_t * mac_addr, uint8_t chan){
   }
   memcpy(serverAddress, mac_addr, sizeof(uint8_t[6]));
 }
+/*
+ * Callback appelé à la réception d'un message ESP-NOW
+ * Si c'est un message deonnées : on ne fait rien !
+ * Si c'est une réponse à la demande d'appairage, les données d'"appairage sont mises à jour
+ */
 void _onDataRecv(const uint8_t * mac_addr, const uint8_t *incomingData, int len) { 
   uint8_t type = incomingData[0];
   switch (type) {
@@ -112,6 +157,14 @@ void _onDataRecv(const uint8_t * mac_addr, const uint8_t *incomingData, int len)
     break;
   }  
 }
+/*
+ * Fonction principale qui gère l'auto appairage
+ * Si l'appiarge est en place: on ne fait rien
+ * Si on doit faire l'appairage (PAIR_REQUEST): un message de demande d'appairage est lancé sur le réseau
+ * Si on a déjà lancé un message de demande d'appairage : si le délai d'attente (fixé à 250 ms) est dépassé, alors on indique 
+ * qu'il faut envoyer un nouveau message de demande d'appairage sur le canal suivant
+ * Les caanux de sont balayés de 1 à 13 (MAX_CHANNEL)
+ */
 PairingStatus autoPairing(){
   switch(pairingStatus) {
     case PAIR_REQUEST:
@@ -155,13 +208,16 @@ PairingStatus autoPairing(){
   return pairingStatus;
 }  
 
-
+/*
+ * Fonction d'initialisatuion du module ESP-NOW
+ * Est appelé dans la fonction setup()
+ */
 
 bool setup_ESP_NOW(){
    Serial.print("Client Board MAC Address:  "); Serial.println(WiFi.macAddress());
    WiFi.mode(WIFI_STA);
    WiFi.disconnect();
-	 pairingStatus = PAIR_REQUEST;
+   pairingStatus = PAIR_REQUEST;
     // Init ESP-NOW
     if (esp_now_init() != ESP_OK) {
       Serial.println("ESP-NOW ne se lance pas correctement");
